@@ -5,7 +5,9 @@ from src.preprocessing.text_cleaner import clean_text
 from src.preprocessing.chunker import split_text
 from src.embeddings.embedding_model import load_embedding_model
 from src.vectordb.chroma_manager import create_vector_store
-from src.retriever.retriever import get_retriever, retrieve_documents
+from src.retriever.retriever import get_retriever
+from src.llm.llm_loader import load_llm
+from src.llm.qa_chain import build_rag_chain
 
 st.set_page_config(
     page_title="AskTube AI",
@@ -14,7 +16,13 @@ st.set_page_config(
 )
 
 st.title("🎥 AskTube AI")
-st.markdown("Enter a YouTube Video ID to process and analyze the video's content.")
+st.markdown(
+    "Chat with any YouTube video by simply providing its Video ID."
+)
+
+# ---------------------------
+# Video Processing Section
+# ---------------------------
 
 video_id = st.text_input(
     "YouTube Video ID",
@@ -34,12 +42,14 @@ if st.button("Process Video", use_container_width=True):
             document = get_transcript(video_id)
 
             # Clean transcript
-            document.page_content = clean_text(document.page_content)
+            document.page_content = clean_text(
+                document.page_content
+            )
 
-            # Split transcript into chunks
+            # Split transcript
             chunks = split_text(document)
 
-            # Load embedding model
+            # Load embeddings
             embedding_model = load_embedding_model()
 
             # Create vector store
@@ -51,18 +61,22 @@ if st.button("Process Video", use_container_width=True):
             # Create retriever
             retriever = get_retriever(vector_store)
 
-            # Store retriever in session state
-            st.session_state.retriever = retriever
+            # Load LLM
+            llm = load_llm()
 
-            # Generate sample embedding
-            sample_embedding = embedding_model.embed_query(
-                chunks[0].page_content
+            # Build RAG Chain
+            rag_chain = build_rag_chain(
+                llm=llm,
+                retriever=retriever
             )
 
-        st.success("Video processed and indexed successfully!")
+            # Save chain in session state
+            st.session_state.rag_chain = rag_chain
+
+        st.success("Video processed successfully!")
 
         # Metrics
-        col1, col2, col3 = st.columns(3)
+        col1, col2 = st.columns(2)
 
         with col1:
             st.metric(
@@ -76,14 +90,8 @@ if st.button("Process Video", use_container_width=True):
                 len(chunks)
             )
 
-        with col3:
-            st.metric(
-                "Embedding Dimension",
-                len(sample_embedding)
-            )
-
         st.info(
-            "Transcript has been stored in ChromaDB and is ready for question answering."
+            "The video is now ready for question answering."
         )
 
     except Exception as e:
@@ -91,35 +99,40 @@ if st.button("Process Video", use_container_width=True):
 
 
 # ---------------------------
-# Question Section
+# Chat Section
 # ---------------------------
 
-if "retriever" in st.session_state:
+if "rag_chain" in st.session_state:
 
     st.divider()
-    st.subheader("Ask Questions About the Video")
+    st.subheader("💬 Ask Questions")
 
     query = st.text_input(
-        "Ask a question",
+        "Enter your question",
         placeholder="What is this video about?"
     )
 
-    if st.button("Search Answer Context"):
+    if st.button("Get Answer", use_container_width=True):
 
         if not query:
             st.warning("Please enter a question.")
-        else:
-            with st.spinner("Searching relevant content..."):
+            st.stop()
 
-                docs = retrieve_documents(
-                    st.session_state.retriever,
-                    query
+        try:
+            with st.spinner("Generating answer..."):
+
+                response = st.session_state.rag_chain.invoke(
+                    {"input": query}
                 )
 
-            st.success(f"Retrieved {len(docs)} relevant chunks.")
+            st.subheader("Answer")
+            st.write(response["answer"])
 
-            with st.expander("View Retrieved Context"):
-                for i, doc in enumerate(docs, start=1):
-                    st.markdown(f"### Chunk {i}")
-                    st.write(doc.page_content)
-                    st.divider()
+            # with st.expander("Retrieved Context"):
+            #     for idx, doc in enumerate(response["context"], start=1):
+            #         st.markdown(f"### Chunk {idx}")
+            #         st.write(doc.page_content)
+            #         st.divider()
+
+        except Exception as e:
+            st.error(f"Error: {str(e)}")
