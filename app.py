@@ -5,6 +5,7 @@ from src.preprocessing.text_cleaner import clean_text
 from src.preprocessing.chunker import split_text
 from src.embeddings.embedding_model import load_embedding_model
 from src.vectordb.chroma_manager import create_vector_store
+from src.retriever.retriever import get_retriever, retrieve_documents
 
 st.set_page_config(
     page_title="AskTube AI",
@@ -41,13 +42,19 @@ if st.button("Process Video", use_container_width=True):
             # Load embedding model
             embedding_model = load_embedding_model()
 
-            # Create Chroma vector store
+            # Create vector store
             vector_store = create_vector_store(
                 chunks=chunks,
                 embedding_model=embedding_model
             )
 
-            # Generate sample embedding for metrics
+            # Create retriever
+            retriever = get_retriever(vector_store)
+
+            # Store retriever in session state
+            st.session_state.retriever = retriever
+
+            # Generate sample embedding
             sample_embedding = embedding_model.embed_query(
                 chunks[0].page_content
             )
@@ -75,10 +82,44 @@ if st.button("Process Video", use_container_width=True):
                 len(sample_embedding)
             )
 
-        st.info("Transcript has been stored in ChromaDB and is ready for question answering.")
-
-        with st.expander("View Sample Chunk"):
-            st.write(chunks[0].page_content)
+        st.info(
+            "Transcript has been stored in ChromaDB and is ready for question answering."
+        )
 
     except Exception as e:
         st.error(f"Error: {str(e)}")
+
+
+# ---------------------------
+# Question Section
+# ---------------------------
+
+if "retriever" in st.session_state:
+
+    st.divider()
+    st.subheader("Ask Questions About the Video")
+
+    query = st.text_input(
+        "Ask a question",
+        placeholder="What is this video about?"
+    )
+
+    if st.button("Search Answer Context"):
+
+        if not query:
+            st.warning("Please enter a question.")
+        else:
+            with st.spinner("Searching relevant content..."):
+
+                docs = retrieve_documents(
+                    st.session_state.retriever,
+                    query
+                )
+
+            st.success(f"Retrieved {len(docs)} relevant chunks.")
+
+            with st.expander("View Retrieved Context"):
+                for i, doc in enumerate(docs, start=1):
+                    st.markdown(f"### Chunk {i}")
+                    st.write(doc.page_content)
+                    st.divider()
