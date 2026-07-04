@@ -1,20 +1,15 @@
-import os
-
-from dotenv import load_dotenv
 from langchain_groq import ChatGroq
-
-load_dotenv()
-
+from src.utils.config import Config
 
 def load_llm():
-    """
-    Loads and returns the Groq LLM.
-    """
+
+    if not Config.GROQ_API_KEY:
+        raise ValueError("GROQ_API_KEY is not set. Please add it to your .env file.")
 
     llm = ChatGroq(
         model="llama-3.3-70b-versatile",
         temperature=0,
-        api_key=os.getenv("GROQ_API_KEY")
+        api_key=Config.GROQ_API_KEY
     )
 
     return llm

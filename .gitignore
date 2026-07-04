@@ -1,26 +1,14 @@
-=========================
-Environment Variables
-=========================
 
 .env
-
-=========================
-Virtual Environments
-=========================
 
 venv/
 .venv/
 env/
 
-=========================
-Python Cache Files
-=========================
-
 pycache/
 *.py[cod]
 *$py.class
 
-ChromaDB Vector Store
 
 chroma_db/
 chromadb/

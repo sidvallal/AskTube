@@ -9,19 +9,53 @@ from src.retriever.retriever import get_retriever
 from src.llm.llm_loader import load_llm
 from src.llm.qa_chain import build_rag_chain
 
+# ---------------------------
+# Streamlit Config
+# ---------------------------
+
 st.set_page_config(
     page_title="AskTube AI",
-    page_icon="🎥",
-    layout="wide"
-)
-
-st.title("🎥 AskTube AI")
-st.markdown(
-    "Chat with any YouTube video by simply providing its Video ID."
+    layout="centered"
 )
 
 # ---------------------------
-# Video Processing Section
+# Cache Resources
+# ---------------------------
+
+@st.cache_resource
+def get_embedding_model():
+    """Load the embedding model only once."""
+    return load_embedding_model()
+
+
+@st.cache_resource
+def get_llm():
+    """Load the LLM only once."""
+    return load_llm()
+
+
+@st.cache_data(show_spinner=False)
+def process_video(video_id: str):
+    """
+    Fetch transcript, clean it and split it into chunks.
+    This is cached for each unique video ID.
+    """
+    document = get_transcript(video_id)
+    document.page_content = clean_text(document.page_content)
+    chunks = split_text(document)
+
+    return document, chunks
+
+
+# ---------------------------
+# Title
+# ---------------------------
+
+st.title("🎥 AskTube AI")
+st.write("Chat with any YouTube video using AI.")
+
+# ---------------------------
+# Video Processing
 # ---------------------------
 
 video_id = st.text_input(
@@ -36,103 +70,89 @@ if st.button("Process Video", use_container_width=True):
         st.stop()
 
     try:
+
         with st.spinner("Processing video..."):
 
-            # Fetch transcript
-            document = get_transcript(video_id)
+            # Cached transcript processing
+            document, chunks = process_video(video_id)
 
-            # Clean transcript
-            document.page_content = clean_text(
-                document.page_content
-            )
+            # Cached embedding model
+            embedding_model = get_embedding_model()
 
-            # Split transcript
-            chunks = split_text(document)
-
-            # Load embeddings
-            embedding_model = load_embedding_model()
-
-            # Create vector store
+            # Create vector database
             vector_store = create_vector_store(
-                chunks=chunks,
-                embedding_model=embedding_model
+                chunks,
+                embedding_model
             )
 
-            # Create retriever
+            # Retriever
             retriever = get_retriever(vector_store)
 
-            # Load LLM
-            llm = load_llm()
+            # Cached LLM
+            llm = get_llm()
 
-            # Build RAG Chain
+            # Build RAG chain
             rag_chain = build_rag_chain(
-                llm=llm,
-                retriever=retriever
+                llm,
+                retriever
             )
 
-            # Save chain in session state
             st.session_state.rag_chain = rag_chain
 
         st.success("Video processed successfully!")
 
-        # Metrics
         col1, col2 = st.columns(2)
 
-        with col1:
-            st.metric(
-                "Language",
-                document.metadata.get("language", "Unknown")
-            )
-
-        with col2:
-            st.metric(
-                "Chunks Created",
-                len(chunks)
-            )
-
-        st.info(
-            "The video is now ready for question answering."
+        col1.metric(
+            "Language",
+            document.metadata.get("language", "Unknown")
         )
 
+        col2.metric(
+            "Chunks",
+            len(chunks)
+        )
+
+        st.info("You can now ask questions about this video.")
+
     except Exception as e:
-        st.error(f"Error: {str(e)}")
+        st.error(str(e))
 
 
 # ---------------------------
-# Chat Section
+# Question Answering
 # ---------------------------
 
 if "rag_chain" in st.session_state:
 
     st.divider()
-    st.subheader("💬 Ask Questions")
 
-    query = st.text_input(
-        "Enter your question",
+    st.subheader("Ask a Question")
+
+    question = st.text_input(
+        "Question",
         placeholder="What is this video about?"
     )
 
     if st.button("Get Answer", use_container_width=True):
 
-        if not query:
+        if not question:
             st.warning("Please enter a question.")
             st.stop()
 
         try:
+
             with st.spinner("Generating answer..."):
 
                 response = st.session_state.rag_chain.invoke(
-                    {"input": query}
+                    {
+                        "input": question
+                    }
                 )
 
             st.subheader("Answer")
+
             st.write(response["answer"])
 
-            # with st.expander("Retrieved Context"):
-            #     for idx, doc in enumerate(response["context"], start=1):
-            #         st.markdown(f"### Chunk {idx}")
-            #         st.write(doc.page_content)
-            #         st.divider()
-
         except Exception as e:
-            st.error(f"Error: {str(e)}")
+            st.error(str(e))

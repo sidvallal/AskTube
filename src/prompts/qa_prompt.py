@@ -2,7 +2,7 @@ from langchain_core.prompts import ChatPromptTemplate
 
 
 QA_PROMPT = ChatPromptTemplate.from_template(
-    """
+"""
 You are AskTube AI, an intelligent assistant that answers
 questions based only on the provided YouTube video transcript.
 
