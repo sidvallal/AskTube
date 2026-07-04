@@ -8,7 +8,7 @@ from src.vectordb.chroma_manager import create_vector_store
 from src.retriever.retriever import get_retriever
 from src.llm.llm_loader import load_llm
 from src.llm.qa_chain import build_rag_chain
-from src.utils.helpers import extract_video_id
+from src.utils.helpers import extract_video_id, get_video_title, truncate_text
 
 # ---------------------------
 # Streamlit Config
@@ -19,26 +19,38 @@ st.set_page_config(
     layout="centered"
 )
 
+SUGGESTED_QUESTIONS = [
+    "Summarize this video",
+    "What are the key takeaways?",
+    "Explain this like I'm five",
+]
+
 # ---------------------------
 # Cache Resources
 # ---------------------------
 
-@st.cache_resource
+@st.cache_resource(show_spinner=False)
 def get_embedding_model():
+    """Load the embedding model only once."""
     return load_embedding_model()
 
 
-@st.cache_resource
+@st.cache_resource(show_spinner=False)
 def get_llm():
+    """Load the LLM only once."""
     return load_llm()
 
 
 @st.cache_data(show_spinner=False)
-def process_video(video_id: str):
-    document = get_transcript(video_id)
-    document.page_content = clean_text(document.page_content)
-    chunks = split_text(document)
-    return document, chunks
+def cached_get_transcript(video_id: str):
+    """Fetch transcript. Cached per video ID."""
+    return get_transcript(video_id)
+
+
+@st.cache_data(show_spinner=False)
+def cached_get_video_title(video_id: str):
+    """Fetch the human-readable video title. Cached per video ID."""
+    return get_video_title(video_id)
 
 
 # ---------------------------
@@ -52,140 +64,206 @@ if "video_id" not in st.session_state:
     st.session_state.video_id = None
 
 if "video_info" not in st.session_state:
-    st.session_state.video_info = None  # dict: language, chunks, url
+    st.session_state.video_info = None  # dict: title, language, chunks, url
 
 if "error_message" not in st.session_state:
     st.session_state.error_message = None
 
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+
 
 # ---------------------------
-# Sidebar
+# Helper: handle a question end-to-end
+# ---------------------------
+
+def handle_question(question: str):
+    """
+    Runs a question through the RAG chain, stores the user question
+    and assistant answer (with source snippets) in session state.
+    """
+
+    st.session_state.messages.append({"role": "user", "content": question})
+
+    try:
+        response = st.session_state.rag_chain.invoke({"input": question})
+        answer = response["answer"]
+
+        source_snippets = []
+        for doc in response.get("context", []):
+            source_snippets.append(truncate_text(doc.page_content, 250))
+
+        st.session_state.messages.append({
+            "role": "assistant",
+            "content": answer,
+            "sources": source_snippets,
+        })
+
+    except Exception as e:
+        st.session_state.messages.append({
+            "role": "assistant",
+            "content": f":material/error: Error: {e}",
+            "sources": [],
+        })
+
+
+# ---------------------------
+# Sidebar: Controls + Status + Video Info
 # ---------------------------
 
 with st.sidebar:
-    st.header("📊 Video Status")
+    st.header(":material/smart_display: AskTube AI")
+
+    video_url = st.text_input(
+        "YouTube Video URL",
+        placeholder="e.g. https://www.youtube.com/watch?v=aircAruvnKk"
+    )
+
+    process_clicked = st.button(
+        ":material/play_circle: Process Video",
+        width="stretch"
+    )
+
+    st.divider()
+
+    st.subheader(":material/monitoring: Video Status")
 
     status = st.session_state.status
 
     if status == "idle":
-        st.info("No video processed yet.")
-
-    elif status == "processing":
-        st.warning(" Processing video...")
+        st.info(":material/info: No video processed yet.")
 
     elif status == "ready":
-        st.success(" Ready for questions")
+        st.success(":material/check_circle: Ready for questions")
 
     elif status == "error":
-        st.error(" Processing failed")
+        st.error(":material/error: Processing failed")
         if st.session_state.error_message:
             st.caption(st.session_state.error_message)
-
-    st.divider()
 
     if st.session_state.video_info:
         info = st.session_state.video_info
 
-        st.subheader("Video Info")
+        st.divider()
+        st.subheader(":material/movie: Video Info")
 
         st.image(
             f"https://img.youtube.com/vi/{st.session_state.video_id}/hqdefault.jpg",
-            use_container_width=True
+            width="stretch"
         )
 
-        st.markdown(f"**Video ID:** `{st.session_state.video_id}`")
+        st.markdown(f"**{info['title']}**")
         st.markdown(f"**Language:** {info['language']}")
-        st.markdown(f"**Chunks:** {info['chunks']}")
-        st.markdown(f"🔗 [ Open on YouTube]({info['url']})")
+        # st.markdown(f"**Chunks:** {info['chunks']}")
+        st.markdown(f":material/open_in_new: [Open on YouTube]({info['url']})")
 
-        if st.button(" Reset", use_container_width=True):
-            for key in ["status", "video_id", "video_info", "error_message", "rag_chain"]:
+        if st.button(":material/refresh: Reset", width="stretch"):
+            for key in [
+                "status",
+                "video_id",
+                "video_info",
+                "error_message",
+                "rag_chain",
+                "messages",
+            ]:
                 st.session_state.pop(key, None)
             st.rerun()
 
 
 # ---------------------------
-# Title
+# Video Processing (triggered from sidebar button)
 # ---------------------------
 
-st.title("🎥 AskTube AI")
-st.write("Chat with any YouTube video using AI.")
-
-# ---------------------------
-# Video Processing
-# ---------------------------
-
-video_url = st.text_input(
-    "YouTube Video URL",
-    placeholder="e.g. https://www.youtube.com/watch?v=aircAruvnKk"
-)
-
-if st.button("Process Video", use_container_width=True):
+if process_clicked:
 
     if not video_url:
-        st.warning("Please enter a YouTube video URL.")
+        st.toast(":material/warning: Please enter a YouTube video URL.")
         st.stop()
 
     video_id = extract_video_id(video_url)
-
     st.session_state.status = "processing"
     st.session_state.error_message = None
 
     try:
         with st.spinner("Processing video..."):
 
-            document, chunks = process_video(video_id)
+            document = cached_get_transcript(video_id)
+            document.page_content = clean_text(document.page_content)
+            chunks = split_text(document)
+            title = cached_get_video_title(video_id)
+
             embedding_model = get_embedding_model()
             vector_store = create_vector_store(chunks, embedding_model)
             retriever = get_retriever(vector_store)
+
             llm = get_llm()
             rag_chain = build_rag_chain(llm, retriever)
 
             st.session_state.rag_chain = rag_chain
             st.session_state.video_id = video_id
             st.session_state.video_info = {
+                "title": title,
                 "language": document.metadata.get("language", "Unknown"),
                 "chunks": len(chunks),
                 "url": document.metadata.get("source", video_url),
             }
             st.session_state.status = "ready"
+            st.session_state.messages = []  # reset chat for new video
 
-        st.success("Video processed successfully!")
-        st.info("You can now ask questions about this video.")
+        st.toast(":material/check_circle: Video processed successfully!")
         st.rerun()
 
     except Exception as e:
         st.session_state.status = "error"
         st.session_state.error_message = str(e)
-        st.error(str(e))
+        st.toast(f":material/error: Processing failed: {e}")
+        st.rerun()
 
 
 # ---------------------------
-# Question Answering
+# Title
+# ---------------------------
+
+st.title("AskTube AI", anchor=False)
+st.caption(":material/smart_display: Chat with any YouTube video using AI.")
+
+# ---------------------------
+# Chat Interface
 # ---------------------------
 
 if "rag_chain" in st.session_state:
 
     st.divider()
-    st.subheader("Ask a Question")
 
-    question = st.text_input(
-        "Question",
-        placeholder="What is this video about?"
-    )
+    if st.session_state.video_info:
+        st.subheader(f":material/forum: {st.session_state.video_info['title']}")
+    else:
+        st.subheader(":material/forum: Chat with the Video")
 
-    if st.button("Get Answer", use_container_width=True):
+    # Suggested question chips (only before the first question)
+    if not st.session_state.messages:
+        st.caption("Try one of these to get started:")
+        cols = st.columns(len(SUGGESTED_QUESTIONS))
+        for col, suggestion in zip(cols, SUGGESTED_QUESTIONS):
+            with col:
+                if st.button(suggestion, width="stretch"):
+                    with st.spinner("Thinking..."):
+                        handle_question(suggestion)
+                    st.rerun()
 
-        if not question:
-            st.warning("Please enter a question.")
-            st.stop()
+    # Render chat history
+    for message in st.session_state.messages:
+        avatar = ":material/person:" if message["role"] == "user" else ":material/smart_toy:"
+        with st.chat_message(message["role"], avatar=avatar):
+            st.write(message["content"])
 
-        try:
-            with st.spinner("Generating answer..."):
-                response = st.session_state.rag_chain.invoke({"input": question})
+    # New user input
+    question = st.chat_input("Ask something about this video...")
 
-            st.subheader("Answer")
-            st.write(response["answer"])
+    if question:
+        with st.spinner("Thinking..."):
+            handle_question(question)
+        st.rerun()
 
-        except Exception as e:
-            st.error(str(e))
+else:
+    st.info(":material/arrow_back: Enter a YouTube URL in the sidebar and click **Process Video** to get started.")

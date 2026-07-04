@@ -1,4 +1,4 @@
-def get_retriever(vector_store, k=5, fetch_k=20):
+def get_retriever(vector_store, k=6, fetch_k=30):
     """
     Creates an advanced retriever using Max Marginal Relevance (MMR).
 
@@ -16,7 +16,7 @@ def get_retriever(vector_store, k=5, fetch_k=20):
         search_kwargs={
             "k": k,
             "fetch_k": fetch_k,
-            "lambda_mult": 0.7
+            "lambda_mult": 0.5
         }
     )
 
