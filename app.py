@@ -8,6 +8,7 @@ from src.vectordb.chroma_manager import create_vector_store
 from src.retriever.retriever import get_retriever
 from src.llm.llm_loader import load_llm
 from src.llm.qa_chain import build_rag_chain
+from src.utils.helpers import extract_video_id
 
 # ---------------------------
 # Streamlit Config
@@ -58,23 +59,23 @@ st.write("Chat with any YouTube video using AI.")
 # Video Processing
 # ---------------------------
 
-video_id = st.text_input(
-    "YouTube Video ID",
-    placeholder="e.g. aircAruvnKk"
+video_url = st.text_input(
+    "YouTube Video URL",
+    placeholder="e.g. https://www.youtube.com/watch?v=aircAruvnKk"
 )
 
 if st.button("Process Video", use_container_width=True):
 
-    if not video_id:
-        st.warning("Please enter a YouTube Video ID.")
+    if not video_url:
+        st.warning("Please enter a YouTube video URL.")
         st.stop()
 
+    video_id = extract_video_id(video_url)
+
     try:
-
         with st.spinner("Processing video..."):
-
-            # Cached transcript processing
             document, chunks = process_video(video_id)
+            ...
 
             # Cached embedding model
             embedding_model = get_embedding_model()
