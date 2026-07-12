@@ -72,36 +72,22 @@ GROQ_API_KEY=your_groq_api_key
 streamlit run app.py
 ```
 
-## Project Workflow
+## Workflow
 
-```text
-YouTube URL
-     │
-     ▼
-Transcript Extraction
-     │
-     ▼
-Text Cleaning
-     │
-     ▼
-Chunking
-     │
-     ▼
-Embeddings
-     │
-     ▼
-ChromaDB
-     │
-     ▼
-Retriever
-     │
-     ▼
-Groq LLM
-     │
-     ▼
-Answer
-```
+<p align="center">
+  <img src="assets/system-design.png" alt="AskTube AI Architecture" width="900">
+</p>
 
+### Pipeline
+
+1. User enters a YouTube URL or Video ID.
+2. The transcript is extracted using `youtube-transcript-api`.
+3. The transcript is cleaned and split into chunks.
+4. Chunks are converted into embeddings using **all-MiniLM-L6-v2**.
+5. Embeddings are stored in **ChromaDB**.
+6. When a question is asked, the **MMR Retriever** finds the most relevant chunks.
+7. The retrieved context and user question are combined into a prompt.
+8. **Groq Llama 3.3 70B** generates the final answer.
 ## Author
 
 **Siddharth Vallal**
