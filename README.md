@@ -75,7 +75,7 @@ streamlit run app.py
 ## Workflow
 
 <p align="center">
-  <img src="assets/system-design.png" alt="AskTube AI Architecture" width="900">
+  <img src="assets/SystemArchitecture.png" alt="AskTube AI Architecture" width="900">
 </p>
 
 ### Pipeline
