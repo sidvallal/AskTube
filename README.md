@@ -95,6 +95,3 @@ streamlit run app.py
 - GitHub: https://github.com/sidvallal
 - LinkedIn: https://www.linkedin.com/in/siddharth-vallal/
 
----
-
-⭐ If you found this project useful, consider giving it a star.
