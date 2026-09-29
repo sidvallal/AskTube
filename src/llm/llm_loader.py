@@ -1,15 +1,29 @@
 from langchain_groq import ChatGroq
 from src.utils.config import Config
 
+
 def load_llm():
 
     if not Config.GROQ_API_KEY:
-        raise ValueError("GROQ_API_KEY is not set. Please add it to your .env file.")
+        raise ValueError(
+            "GROQ_API_KEY is not set. "
+            "Please add it to your .env file."
+        )
 
     llm = ChatGroq(
-        model="llama-3.3-70b-versatile",
+        model="openai/gpt-oss-120b",
         temperature=0,
         api_key=Config.GROQ_API_KEY
+    )
+
+    # Add LangSmith tracing configuration
+    llm = llm.with_config(
+        run_name="AskTube Groq LLM",
+        tags=["AskTube", "Groq", "LLM"],
+        metadata={
+            "model": "llama-3.3-70b-versatile",
+            "temperature": 0
+        }
     )
 
     return llm

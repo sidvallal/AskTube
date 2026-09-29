@@ -17,16 +17,21 @@ def extract_video_id(url: str) -> str:
 
     for pattern in patterns:
         match = re.search(pattern, url)
+
         if match:
             return match.group(1)
 
     return url.strip()
 
 
-def truncate_text(text: str, max_length: int = 300):
+def truncate_text(text, max_length: int = 300) -> str:
     """
-    Truncates long text for preview purposes.
+    Truncates text for preview purposes.
+    Handles dictionaries and other non-string values safely.
     """
+
+    if not isinstance(text, str):
+        text = str(text)
 
     if len(text) <= max_length:
         return text

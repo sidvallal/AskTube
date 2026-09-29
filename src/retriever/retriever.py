@@ -1,14 +1,6 @@
 def get_retriever(vector_store, k=6, fetch_k=30):
     """
-    Creates an advanced retriever using Max Marginal Relevance (MMR).
-
-    Args:
-        vector_store: Chroma vector store instance
-        k (int): Final number of chunks returned.
-        fetch_k (int): Number of chunks fetched before reranking.
-
-    Returns:
-        Retriever object.
+    Creates an MMR retriever with LangSmith tracing configuration.
     """
 
     retriever = vector_store.as_retriever(
@@ -20,19 +12,28 @@ def get_retriever(vector_store, k=6, fetch_k=30):
         }
     )
 
+    # Add LangSmith tracing configuration
+    retriever = retriever.with_config(
+        run_name="AskTube MMR Retriever",
+        tags=["AskTube", "MMR", "Retrieval"],
+        metadata={
+            "k": k,
+            "fetch_k": fetch_k,
+            "search_type": "mmr"
+        }
+    )
+
     return retriever
 
 
 def retrieve_documents(retriever, query: str):
     """
     Retrieves relevant documents for a given query.
-
-    Args:
-        retriever: LangChain retriever object
-        query (str): User query
-
-    Returns:
-        List of relevant documents.
     """
 
-    return retriever.invoke(query)
+    return retriever.invoke(
+        query,
+        config={
+            "run_name": "Retrieve YouTube Chunks"
+        }
+    )
